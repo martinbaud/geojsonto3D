@@ -99,7 +99,7 @@ When choosing "custom" during interactive setup, you can configure:
 
 2. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/geojsonto3D.git
+   git clone https://github.com/martinbaud/geojsonto3D.git
    cd geojsonto3D
    ```
 
