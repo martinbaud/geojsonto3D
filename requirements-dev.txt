@@ -1,0 +1,14 @@
+# Development dependencies for testing and linting
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+coverage>=7.3.0
+
+# Linting and formatting
+flake8>=6.1.0
+black>=23.7.0
+pylint>=2.17.0
+
+# Type checking (optional)
+mypy>=1.5.0

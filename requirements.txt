@@ -1,0 +1,6 @@
+# Production dependencies
+# Note: Blender provides its own Python with bpy, mathutils, bmesh
+# These are only needed if running outside Blender context
+
+# No external dependencies required for the CLI
+# All standard library modules are used
