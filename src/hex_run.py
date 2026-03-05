@@ -623,8 +623,9 @@ def create_city_border(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
     tangent_u = n.cross(up).normalized()
     tangent_v = n.cross(tangent_u).normalized()
 
-    # Border sits at the base of the city marker
-    base_center = n * (RADIUS + above - EMBED_EPS)
+    # Border sits at the TOP of the city marker (front face)
+    # City top is at: base + n * above, so border center = RADIUS + 2*above - EMBED_EPS
+    base_center = n * (RADIUS + 2 * above - EMBED_EPS)
 
     # Inner and outer radius for the border ring
     inner_radius = radius + width * 0.5
