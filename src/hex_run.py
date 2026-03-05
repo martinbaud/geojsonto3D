@@ -35,6 +35,7 @@ RES_DIR = PROJECT_ROOT / "res"
 RES_DIR.mkdir(exist_ok=True)
 
 GEOJSON_COUNTRIES = str(DATA_DIR / "ne_50m_admin_0_countries.geojson")
+GEOJSON_PLACES = str(DATA_DIR / "ne_50m_populated_places.json")
 
 RADIUS = 1.0
 ICO_SUBDIV = 4          # Blender icosphere subdivision (dual -> hex cells)
@@ -49,6 +50,16 @@ EMBED_EPS = 0.0002
 
 ENABLE_BORDER = True
 ENABLE_EXTRUSION = True
+ENABLE_CITIES = False
+
+# City configuration
+CITY_MAX = 200              # Max cities to generate
+CITY_MARKER_RADIUS = 0.006  # Radius of city marker base
+CITY_MARKER_SIDES = 6       # Hexagonal prism (matches hex globe)
+CITY_MARKER_HEIGHT = 0.03  # Height above cell surface (doubled for visibility)
+CITY_BORDER_WIDTH = 0.0004  # Width of city border ring
+CITY_BORDER_HEIGHT = 0.001  # Height of city border ring
+EXTRUDE_ABOVE_CITY = CITY_MARKER_HEIGHT
 
 # Minimum vertex votes required for pass-2 rescue of narrow countries.
 # Use 2 for high subdivision (ico_subdiv >= 6, small cells).
@@ -88,6 +99,12 @@ if "--" in sys.argv:
             ENABLE_EXTRUSION = False; _i += 1
         elif _a == "--min-pass2-votes" and _i + 1 < len(_args):
             MIN_PASS2_VOTES = int(_args[_i + 1]); _i += 2
+        elif _a in ("--enable-cities",):
+            ENABLE_CITIES = True; _i += 1
+        elif _a in ("--disable-cities",):
+            ENABLE_CITIES = False; _i += 1
+        elif _a == "--city-max" and _i + 1 < len(_args):
+            CITY_MAX = int(_args[_i + 1]); _i += 2
         else:
             _i += 1
 
@@ -474,6 +491,238 @@ def create_border_ribbons(source_obj, above, name_prefix, parent,
     return ob
 
 
+# --- CITY GENERATION ---------------------------------------------------------
+def load_places_data(path):
+    """Load city/places data from Natural Earth JSON."""
+    with open(path, encoding='utf-8') as f:
+        data = json.load(f)
+
+    places = []
+    # Handle both GeoJSON FeatureCollection and raw array
+    items = data.get('features', data) if isinstance(data, dict) else data
+
+    for item in items:
+        props = item.get('properties', item)
+        geom = item.get('geometry', {})
+
+        # Extract coordinates (GeoJSON or flat schema)
+        if geom and geom.get('type') == 'Point':
+            lon, lat = geom['coordinates']
+        else:
+            lat = props.get('LATITUDE') or props.get('LAT') or props.get('LATDD')
+            lon = props.get('LONGITUDE') or props.get('LON') or props.get('LONDD')
+
+        if lat is None or lon is None:
+            continue
+
+        name = props.get('NAME') or props.get('NAMEASCII') or 'Unknown'
+        pop = props.get('POP_MAX') or props.get('pop_max') or 0
+
+        # Clean name for mesh naming
+        name_clean = ''.join(c if c.isalnum() else '_' for c in name)
+
+        places.append({
+            "name": name_clean,
+            "lon": lon,
+            "lat": lat,
+            "pop": pop,
+        })
+
+    # Sort by population descending
+    places.sort(key=lambda p: p['pop'], reverse=True)
+    return places
+
+
+def create_city_marker(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
+                       radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES,
+                       parent=None):
+    """
+    Create a hexagonal prism city marker oriented to the globe surface.
+    """
+    lat_rad = math.radians(lat_deg)
+    lon_rad = math.radians(lon_deg)
+
+    # Surface normal direction
+    n = Vector((
+        math.cos(lat_rad) * math.cos(lon_rad),
+        math.cos(lat_rad) * math.sin(lon_rad),
+        math.sin(lat_rad),
+    )).normalized()
+
+    # Create tangent vectors
+    up = Vector((0, 0, 1))
+    if abs(n.dot(up)) > 0.99:
+        up = Vector((1, 0, 0))
+    tangent_u = n.cross(up).normalized()
+    tangent_v = n.cross(tangent_u).normalized()
+
+    # Base center on globe surface
+    base_center = n * (RADIUS + above - EMBED_EPS)
+
+    # Create base vertices (hexagon)
+    base_verts = []
+    for i in range(sides):
+        angle = 2 * math.pi * i / sides
+        offset = tangent_u * (radius * math.cos(angle)) + tangent_v * (radius * math.sin(angle))
+        base_verts.append(base_center + offset)
+
+    # Top vertices (extruded along normal)
+    top_verts = [v + n * above for v in base_verts]
+
+    # Create mesh
+    bm = bmesh.new()
+    bm_base = [bm.verts.new(v) for v in base_verts]
+    bm_top = [bm.verts.new(v) for v in top_verts]
+
+    # Bottom face
+    bm.faces.new(bm_base[::-1])
+    # Top face
+    bm.faces.new(bm_top)
+    # Side faces
+    for i in range(sides):
+        j = (i + 1) % sides
+        bm.faces.new([bm_base[i], bm_base[j], bm_top[j], bm_top[i]])
+
+    bm.normal_update()
+
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(obj)
+    if parent:
+        obj.parent = parent
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.shade_smooth()
+
+    return obj
+
+
+def create_city_border(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
+                       radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES,
+                       width=CITY_BORDER_WIDTH, height=CITY_BORDER_HEIGHT,
+                       parent=None):
+    """
+    Create a hexagonal border ring around a city marker.
+    """
+    lat_rad = math.radians(lat_deg)
+    lon_rad = math.radians(lon_deg)
+
+    # Surface normal direction
+    n = Vector((
+        math.cos(lat_rad) * math.cos(lon_rad),
+        math.cos(lat_rad) * math.sin(lon_rad),
+        math.sin(lat_rad),
+    )).normalized()
+
+    # Create tangent vectors
+    up = Vector((0, 0, 1))
+    if abs(n.dot(up)) > 0.99:
+        up = Vector((1, 0, 0))
+    tangent_u = n.cross(up).normalized()
+    tangent_v = n.cross(tangent_u).normalized()
+
+    # Border sits at the base of the city marker
+    base_center = n * (RADIUS + above - EMBED_EPS)
+
+    # Inner and outer radius for the border ring
+    inner_radius = radius + width * 0.5
+    outer_radius = radius + width * 1.5
+
+    # Create vertices for hexagonal ring
+    bm = bmesh.new()
+    inner_bottom = []
+    outer_bottom = []
+    inner_top = []
+    outer_top = []
+
+    for i in range(sides):
+        angle = 2 * math.pi * i / sides
+        cos_a = math.cos(angle)
+        sin_a = math.sin(angle)
+
+        inner_offset = tangent_u * (inner_radius * cos_a) + tangent_v * (inner_radius * sin_a)
+        outer_offset = tangent_u * (outer_radius * cos_a) + tangent_v * (outer_radius * sin_a)
+
+        inner_bottom.append(bm.verts.new(base_center + inner_offset))
+        outer_bottom.append(bm.verts.new(base_center + outer_offset))
+        inner_top.append(bm.verts.new(base_center + inner_offset + n * height))
+        outer_top.append(bm.verts.new(base_center + outer_offset + n * height))
+
+    # Create faces for the ring
+    for i in range(sides):
+        j = (i + 1) % sides
+        # Top face (outer ring surface)
+        bm.faces.new([outer_top[i], outer_top[j], inner_top[j], inner_top[i]])
+        # Outer side face
+        bm.faces.new([outer_bottom[i], outer_bottom[j], outer_top[j], outer_top[i]])
+        # Inner side face
+        bm.faces.new([inner_top[i], inner_top[j], inner_bottom[j], inner_bottom[i]])
+        # Bottom face
+        bm.faces.new([inner_bottom[i], inner_bottom[j], outer_bottom[j], outer_bottom[i]])
+
+    bm.normal_update()
+
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(obj)
+    if parent:
+        obj.parent = parent
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.shade_smooth()
+
+    return obj
+
+
+def find_cell_for_city(lat, lon, cells, cell_countries, features):
+    """
+    Find the best cell for a city based on:
+    1. Country containing the city
+    2. Closest cell centroid belonging to that country
+    """
+    # Find which country contains this city
+    city_country = None
+    for feat in features:
+        minx, maxx, miny, maxy = feat["bbox"]
+        if not (minx <= lon <= maxx and miny <= lat <= maxy):
+            continue
+        if point_in_poly(lon, lat, feat["rings"][0]):
+            city_country = feat["admin"]
+            break
+
+    if not city_country:
+        return None, None
+
+    # Find closest cell in that country
+    city_dir = Vector((
+        math.cos(math.radians(lat)) * math.cos(math.radians(lon)),
+        math.cos(math.radians(lat)) * math.sin(math.radians(lon)),
+        math.sin(math.radians(lat)),
+    )).normalized()
+
+    best_cell_idx = None
+    best_dot = -1
+
+    for idx, (cell, country) in enumerate(zip(cells, cell_countries)):
+        if country is None:
+            continue
+        # Get admin name from cell
+        cell_admin = cell.get('admin')
+        if cell_admin != city_country:
+            continue
+        cell_dir = cell['centroid'].normalized()
+        dot = city_dir.dot(cell_dir)
+        if dot > best_dot:
+            best_dot = dot
+            best_cell_idx = idx
+
+    return best_cell_idx, city_country
+
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -485,6 +734,7 @@ print(f"  ICO subdivision: {ICO_SUBDIV}")
 print(f"  Hex label:       {HEX_LABEL}")
 print(f"  Extrusion:       above={EXTRUDE_ABOVE}, below={EXTRUDE_BELOW}")
 print(f"  Borders:         {'ON' if ENABLE_BORDER else 'OFF'} (w={BORDER_WIDTH}, h={BORDER_HEIGHT})")
+print(f"  Cities:          {'ON' if ENABLE_CITIES else 'OFF'} (max={CITY_MAX})")
 print(f"  Output:          {OUT_GLB}")
 print("-" * 60)
 
@@ -515,6 +765,10 @@ bpy.context.collection.objects.link(parent)
 # Group cells
 country_cells = {}    # {feature_name: [(global_idx, cell), ...]}
 ocean_cells = []       # [(global_idx, cell), ...]
+
+# City objects (populated in atlas mode if enabled)
+city_objs = []
+city_border_objs = []
 
 for idx, (cell, country) in enumerate(zip(cells, cell_countries)):
     if country:
@@ -556,6 +810,40 @@ if MODE == "atlas":
         country_objs.append(surf)
 
     print(f"  Created {len(country_objs)} country objects")
+
+    # --- CITY GENERATION (Atlas Mode Only) ---
+    if ENABLE_CITIES:
+        print("\n--- Generating Cities ---")
+        try:
+            places = load_places_data(GEOJSON_PLACES)
+            places = places[:CITY_MAX]
+            print(f"  Loaded {len(places)} cities (top by population)")
+
+            for i, p in enumerate(places):
+                cell_idx, city_country = find_cell_for_city(p['lat'], p['lon'], cells, cell_countries, features)
+                if cell_idx is None:
+                    continue
+
+                # Use cell centroid for positioning (centers city in hex cell)
+                cell_centroid = cells[cell_idx]['centroid']
+                cell_lat, cell_lon = xyz_to_latlon(cell_centroid)
+
+                # Use country name in mesh name for proper indexing
+                city_name = f"city_{city_country}_{p['name']}_{i}"
+                obj = create_city_marker(city_name, cell_lat, cell_lon, parent=parent)
+                city_objs.append(obj)
+
+                # Create hexagonal border around city
+                border_name = f"border_city_{city_country}_{p['name']}_{i}"
+                border_obj = create_city_border(border_name, cell_lat, cell_lon, parent=parent)
+                city_border_objs.append(border_obj)
+
+                if (i + 1) % 50 == 0:
+                    print(f"    Cities: {i + 1}/{len(places)}...")
+
+            print(f"  Created {len(city_objs)} city markers with {len(city_border_objs)} borders")
+        except Exception as e:
+            print(f"  Warning: Failed to load cities: {e}")
 
 
 # =============================================================================
@@ -648,6 +936,12 @@ try:
         "countries": len(country_cells),
         "extrusions": {"above": EXTRUDE_ABOVE, "below": EXTRUDE_BELOW},
         "border": {"width": BORDER_WIDTH, "height": BORDER_HEIGHT, "enabled": ENABLE_BORDER},
+        "cities": {
+            "enabled": ENABLE_CITIES,
+            "count": len(city_objs),
+            "borders": len(city_border_objs),
+            "sides": CITY_MARKER_SIDES,
+        },
     }
     with open(OUT_CFG, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)

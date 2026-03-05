@@ -115,6 +115,8 @@ PRESETS = {
         'border_width': 0.0005,
         'border_height': 0.0015,
         'enable_borders': True,
+        'enable_cities': True,
+        'min_pass2_votes': 1,
     },
     'weather-hex-low': {
         'script': 'hex',
@@ -368,10 +370,11 @@ def build_script_args(config):
         else:
             args.append('--disable-closing')
 
-        if config.get('enable_cities', False):
-            args.append('--enable-cities')
-        else:
-            args.append('--disable-cities')
+    # Cities (both hex and ico modes)
+    if config.get('enable_cities', False):
+        args.append('--enable-cities')
+    else:
+        args.append('--disable-cities')
 
     return args
 
