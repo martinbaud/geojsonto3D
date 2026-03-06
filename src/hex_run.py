@@ -56,10 +56,10 @@ ENABLE_CITIES = False
 CITY_MAX = 200              # Max cities to generate
 CITY_MARKER_RADIUS = 0.006  # Radius of city marker base
 CITY_MARKER_SIDES = 6       # Hexagonal prism (matches hex globe)
-CITY_MARKER_HEIGHT = 0.03  # Height above cell surface (doubled for visibility)
 CITY_BORDER_WIDTH = 0.0004  # Width of city border ring
 CITY_BORDER_HEIGHT = 0.001  # Height of city border ring
-EXTRUDE_ABOVE_CITY = CITY_MARKER_HEIGHT
+# City extrusion: outer face at surface, extends INWARD like countries
+# Will be set to match EXTRUDE_BELOW after CLI parsing
 
 # Minimum vertex votes required for pass-2 rescue of narrow countries.
 # Use 2 for high subdivision (ico_subdiv >= 6, small cells).
@@ -533,12 +533,17 @@ def load_places_data(path):
     return places
 
 
-def create_city_marker(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
+def create_city_marker(name, lat_deg, lon_deg, below=None,
                        radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES,
                        parent=None):
     """
     Create a hexagonal prism city marker oriented to the globe surface.
+    Outer face at surface level, extruding INWARD like countries.
     """
+    # Use EXTRUDE_BELOW if not specified (matches country extrusion)
+    if below is None:
+        below = EXTRUDE_BELOW
+
     lat_rad = math.radians(lat_deg)
     lon_rad = math.radians(lon_deg)
 
@@ -556,18 +561,18 @@ def create_city_marker(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
     tangent_u = n.cross(up).normalized()
     tangent_v = n.cross(tangent_u).normalized()
 
-    # Base center on globe surface
-    base_center = n * (RADIUS + above - EMBED_EPS)
+    # Top (outer) face at surface level
+    top_center = n * (RADIUS - EMBED_EPS)
 
-    # Create base vertices (hexagon)
-    base_verts = []
+    # Create top vertices (hexagon at surface)
+    top_verts = []
     for i in range(sides):
         angle = 2 * math.pi * i / sides
         offset = tangent_u * (radius * math.cos(angle)) + tangent_v * (radius * math.sin(angle))
-        base_verts.append(base_center + offset)
+        top_verts.append(top_center + offset)
 
-    # Top vertices (extruded along normal)
-    top_verts = [v + n * above for v in base_verts]
+    # Base (inner) vertices - extruded INWARD (toward center)
+    base_verts = [v - n * below for v in top_verts]
 
     # Create mesh
     bm = bmesh.new()
@@ -599,12 +604,13 @@ def create_city_marker(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
     return obj
 
 
-def create_city_border(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
+def create_city_border(name, lat_deg, lon_deg,
                        radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES,
                        width=CITY_BORDER_WIDTH, height=CITY_BORDER_HEIGHT,
                        parent=None):
     """
     Create a hexagonal border ring around a city marker.
+    Border sits at surface level (same as city outer face).
     """
     lat_rad = math.radians(lat_deg)
     lon_rad = math.radians(lon_deg)
@@ -623,9 +629,8 @@ def create_city_border(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
     tangent_u = n.cross(up).normalized()
     tangent_v = n.cross(tangent_u).normalized()
 
-    # Border sits at the TOP of the city marker (front face)
-    # City top is at: base + n * above, so border center = RADIUS + 2*above - EMBED_EPS
-    base_center = n * (RADIUS + 2 * above - EMBED_EPS)
+    # Border sits at surface level (aligned with city outer face)
+    base_center = n * (RADIUS - EMBED_EPS)
 
     # Inner and outer radius for the border ring
     inner_radius = radius + width * 0.5
