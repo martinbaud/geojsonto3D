@@ -1,0 +1,15 @@
+{
+  "description": "Natural Earth ADMIN names -> Pythagoras API names",
+  "mapping": {
+    "Czechia": "Czech Republic",
+    "United Republic of Tanzania": "Tanzania",
+    "The Bahamas": "Bahamas",
+    "Republic of Serbia": "Serbia",
+    "Federated States of Micronesia": "Micronesia",
+    "Ivory Coast": "Cote d'Ivoire",
+    "eSwatini": "Eswatini",
+    "Cabo Verde": "Cape Verde",
+    "East Timor": "Timor-Leste",
+    "São Tomé and Principe": "Sao Tome and Principe"
+  }
+}

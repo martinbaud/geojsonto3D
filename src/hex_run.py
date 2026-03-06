@@ -36,6 +36,7 @@ RES_DIR.mkdir(exist_ok=True)
 
 GEOJSON_COUNTRIES = str(DATA_DIR / "ne_50m_admin_0_countries.geojson")
 GEOJSON_PLACES = str(DATA_DIR / "ne_50m_populated_places.json")
+COUNTRY_NAME_MAPPING = str(DATA_DIR / "country_name_mapping.json")
 
 RADIUS = 1.0
 ICO_SUBDIV = 4          # Blender icosphere subdivision (dual -> hex cells)
@@ -172,6 +173,26 @@ def new_mesh_object(name, verts, faces, parent=None, smooth=True):
     return obj
 
 
+# --- COUNTRY NAME MAPPING ---------------------------------------------------
+def load_country_name_mapping(path):
+    """Load country name mapping (Natural Earth -> API names)."""
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get("mapping", {})
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Warning: Could not load country name mapping: {e}")
+        return {}
+
+
+_NAME_MAPPING = load_country_name_mapping(COUNTRY_NAME_MAPPING)
+
+
+def normalize_country_name(natural_earth_name):
+    """Convert Natural Earth ADMIN name to standardized API name."""
+    return _NAME_MAPPING.get(natural_earth_name, natural_earth_name)
+
+
 # --- GOLDBERG DUAL MESH -----------------------------------------------------
 def compute_goldberg_cells(ico_subdiv, radius):
     """
@@ -240,7 +261,9 @@ def load_geojson_features(path):
 
     features = []
     for feat in gj.get("features", []):
-        name = feat["properties"]["ADMIN"]
+        raw_name = feat["properties"]["ADMIN"]
+        # Normalize Natural Earth name to API name
+        name = normalize_country_name(raw_name)
         geom = feat.get("geometry", {})
         if not geom:
             continue
