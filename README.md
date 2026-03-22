@@ -1,6 +1,7 @@
 # GeoJSON to 3D Globe
 
 ![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 
