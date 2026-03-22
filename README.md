@@ -341,6 +341,6 @@ Natural Earth is made available under **Public Domain** terms. No permission is 
 
 ## License
 
-**Code**: This project code is provided as-is for educational and creative use.
+**Code**: [MIT License](LICENSE)
 
 **Data**: Geographic data from Natural Earth is in the **Public Domain**.

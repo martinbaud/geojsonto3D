@@ -710,8 +710,9 @@ def create_city_border(name, lat_deg, lon_deg,
 def find_cell_for_city(lat, lon, cells, cell_countries, features):
     """
     Find the best cell for a city based on:
-    1. Country containing the city
+    1. Country containing the city (preferred)
     2. Closest cell centroid belonging to that country
+    3. If no cell in country, use closest cell globally (fallback)
     """
     # Find which country contains this city
     city_country = None
@@ -723,10 +724,7 @@ def find_cell_for_city(lat, lon, cells, cell_countries, features):
             city_country = feat["admin"]
             break
 
-    if not city_country:
-        return None, None
-
-    # Find closest cell in that country
+    # City direction vector on sphere
     city_dir = Vector((
         math.cos(math.radians(lat)) * math.cos(math.radians(lon)),
         math.cos(math.radians(lat)) * math.sin(math.radians(lon)),
@@ -736,20 +734,36 @@ def find_cell_for_city(lat, lon, cells, cell_countries, features):
     best_cell_idx = None
     best_dot = -1
 
+    # Also track global best (for fallback)
+    global_best_idx = None
+    global_best_dot = -1
+
     for idx, (cell, country) in enumerate(zip(cells, cell_countries)):
         if country is None:
             continue
-        # Get admin name from cell
-        cell_admin = cell.get('admin')
-        if cell_admin != city_country:
-            continue
         cell_dir = cell['centroid'].normalized()
         dot = city_dir.dot(cell_dir)
-        if dot > best_dot:
-            best_dot = dot
-            best_cell_idx = idx
 
-    return best_cell_idx, city_country
+        # Track global best
+        if dot > global_best_dot:
+            global_best_dot = dot
+            global_best_idx = idx
+
+        # Check country match
+        cell_admin = cell.get('admin')
+        if city_country and cell_admin == city_country:
+            if dot > best_dot:
+                best_dot = dot
+                best_cell_idx = idx
+
+    # Use country-specific cell if found, otherwise use closest cell globally
+    if best_cell_idx is not None:
+        return best_cell_idx, city_country
+    elif global_best_idx is not None:
+        # Fallback: use closest cell regardless of country
+        return global_best_idx, city_country or "Unknown"
+
+    return None, None
 
 
 # =============================================================================
