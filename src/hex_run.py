@@ -21,8 +21,12 @@ import math
 import bmesh
 import sys
 from mathutils import Vector
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+
+# Ensure src/ is importable when run via Blender --python
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from geo_utils import xyz_to_latlon as _xyz_to_latlon, point_in_poly
 
 # --- CONFIGURATION (overridable via CLI) ------------------------------------
 PROJECT_ROOT = (
@@ -130,25 +134,7 @@ OUT_CFG = OUT_GLB.replace(".glb", ".config.json")
 # --- UTILITY FUNCTIONS ------------------------------------------------------
 def xyz_to_latlon(v):
     """Convert 3D Cartesian to (latitude, longitude) in degrees."""
-    r = v.length
-    if r < 1e-10:
-        return 0.0, 0.0
-    return (
-        math.degrees(math.asin(max(-1.0, min(1.0, v.z / r)))),
-        math.degrees(math.atan2(v.y, v.x)),
-    )
-
-
-def point_in_poly(lon, lat, poly):
-    """Ray-casting point-in-polygon test."""
-    inside = False
-    n = len(poly)
-    for i in range(n):
-        x1, y1 = poly[i]
-        x2, y2 = poly[(i + 1) % n]
-        if ((y1 > lat) != (y2 > lat)) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
-            inside = not inside
-    return inside
+    return _xyz_to_latlon(v.x, v.y, v.z)
 
 
 def select_hierarchy(obj):
@@ -927,7 +913,7 @@ elif MODE == "weather":
 
     # Generate mapping JSON
     mapping = {
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "total_cells": len(cells),
         "assigned_cells": n_assigned,
         "ocean_cells": len(ocean_cells),
@@ -966,7 +952,7 @@ print(f"Export complete: {OUT_GLB}")
 # --- Write config JSON -------------------------------------------------------
 try:
     cfg = {
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "mode": MODE,
         "ico_subdiv": ICO_SUBDIV,
         "hex_label": HEX_LABEL,

@@ -5,8 +5,12 @@ import bmesh
 import sys
 import os
 from mathutils import Vector
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+
+# Ensure src/ is importable when run via Blender --python
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from geo_utils import xyz_to_latlon as _xyz_to_latlon, point_in_poly
 
 # --- CONFIGURATION (can be overridden by CLI arguments) ----------------------
 # Project root directory (parent of src/)
@@ -111,19 +115,7 @@ OUT_CFG = str(RES_DIR / f"atlas_ico_subdiv_{ICO_SUBDIV}.config.json")
 # --- UTILITY FUNCTIONS -------------------------------------------------------
 def xyz_to_latlon(v):
     """Convert 3D Cartesian coordinates to latitude/longitude in degrees."""
-    r = v.length
-    return math.degrees(math.asin(v.z/r)), math.degrees(math.atan2(v.y, v.x))
-
-
-def point_in_poly(lon, lat, poly):
-    """Ray-casting algorithm to test if a point is inside a polygon."""
-    inside = False
-    for i in range(len(poly)):
-        x1, y1 = poly[i]
-        x2, y2 = poly[(i+1) % len(poly)]
-        if ((y1 > lat) != (y2 > lat)) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
-            inside = not inside
-    return inside
+    return _xyz_to_latlon(v.x, v.y, v.z)
 
 
 def select_hierarchy(obj):
@@ -788,7 +780,7 @@ print(f"Export complete: {OUT_GLB}")
 # --- WRITE CONFIG ------------------------------------------------------------
 try:
     cfg = {
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "ico_subdiv": ICO_SUBDIV,
         "radius": RADIUS,
         "extrusions": {

@@ -4,11 +4,14 @@
 Blender Runner CLI - Execute run.py with Blender easily
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 # Force UTF-8 encoding for Windows console
 if sys.platform == 'win32':
@@ -158,7 +161,7 @@ PRESETS = {
 ALL_PRESET_NAMES = list(PRESETS.keys())
 
 
-def load_cache(cache_file):
+def load_cache(cache_file: str | Path) -> dict[str, Any]:
     """Load cached data from JSON file, with legacy fallback and migration."""
     cache_path = Path(cache_file)
     candidates = [cache_path]
@@ -186,7 +189,7 @@ def load_cache(cache_file):
     return {}
 
 
-def save_cache(cache_file, data):
+def save_cache(cache_file: str | Path, data: dict[str, Any]) -> bool:
     """Save data to JSON cache file at canonical location."""
     try:
         cache_path = Path(cache_file)
@@ -198,7 +201,7 @@ def save_cache(cache_file, data):
         return False
 
 
-def verify_blender(blender_path):
+def verify_blender(blender_path: str | None) -> bool:
     """Verify that Blender executable works."""
     if not blender_path or not Path(blender_path).exists():
         return False
@@ -215,7 +218,7 @@ def verify_blender(blender_path):
         return False
 
 
-def get_blender_path(force_ask=False):
+def get_blender_path(force_ask: bool = False) -> str | None:
     """Get Blender path from cache or user input."""
     cache = load_cache(CACHE_FILE)
 
@@ -249,7 +252,7 @@ def get_blender_path(force_ask=False):
         return None
 
 
-def interactive_config():
+def interactive_config() -> dict[str, Any]:
     """Interactive configuration for generation parameters."""
     print("\n" + "="*60)
     print("Generation Configuration")
@@ -319,7 +322,7 @@ def interactive_config():
     return config
 
 
-def get_config(force_interactive=False, preset=None):
+def get_config(force_interactive: bool = False, preset: str | None = None) -> dict[str, Any]:
     """Get configuration from cache, preset, or interactive input."""
     if preset and preset in PRESETS:
         config = PRESETS[preset].copy()
@@ -339,7 +342,7 @@ def get_config(force_interactive=False, preset=None):
     return interactive_config()
 
 
-def build_script_args(config):
+def build_script_args(config: dict[str, Any]) -> list[str]:
     """Build command line arguments for run.py or hex_run.py from config."""
     args = []
     is_hex = config.get('script') == 'hex'
@@ -379,7 +382,7 @@ def build_script_args(config):
     return args
 
 
-def get_script_path(config, override=None):
+def get_script_path(config: dict[str, Any], override: str | None = None) -> str:
     """Determine which Blender script to use based on config."""
     if override:
         return override
@@ -388,7 +391,7 @@ def get_script_path(config, override=None):
     return str(Path(__file__).parent / 'run.py')
 
 
-def run_blender(blender_path, script_path, args, background=True):
+def run_blender(blender_path: str, script_path: str, args: list[str], background: bool = True) -> bool:
     """Execute Blender with the script."""
     cmd = [blender_path]
 
@@ -419,7 +422,7 @@ def run_blender(blender_path, script_path, args, background=True):
         return False
 
 
-def main():
+def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description='Blender Runner CLI - GeoJSON to 3D Globe Generator',
