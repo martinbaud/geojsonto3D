@@ -26,7 +26,7 @@ from pathlib import Path
 
 # Ensure src/ is importable when run via Blender --python
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from geo_utils import xyz_to_latlon as _xyz_to_latlon, point_in_poly
+from geo_utils import xyz_to_latlon as _xyz_to_latlon, point_in_poly  # noqa: E402
 
 # --- CONFIGURATION (overridable via CLI) ------------------------------------
 PROJECT_ROOT = Path(bpy.path.abspath("//")).parent if "//" in bpy.path.abspath("//") else Path(__file__).parent.parent

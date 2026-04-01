@@ -4,11 +4,9 @@ Integration tests for GeoJSON to 3D Globe application
 
 import unittest
 import sys
-import json
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))

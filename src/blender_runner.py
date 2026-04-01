@@ -241,10 +241,10 @@ def get_blender_path(force_ask: bool = False) -> str | None:
         blender_path = str(Path(user_input).resolve())
         cache["blender_path"] = blender_path
         save_cache(CACHE_FILE, cache)
-        print(f"✓ Blender configured and cached")
+        print("✓ Blender configured and cached")
         return blender_path
     else:
-        print(f"✗ Invalid Blender path")
+        print("✗ Invalid Blender path")
         return None
 
 
@@ -331,7 +331,7 @@ def get_config(force_interactive: bool = False, preset: str | None = None) -> di
     # Try to load cached config
     config = load_cache(CONFIG_FILE)
     if config and "ico_subdiv" in config:
-        print(f"✓ Using cached configuration")
+        print("✓ Using cached configuration")
         return config
 
     # No cache, ask interactively
@@ -444,7 +444,10 @@ def main() -> int:
         "-p",
         type=str,
         choices=ALL_PRESET_NAMES,
-        help="Use quality preset (ico: low/medium/high/ultra | hex: hex-low/hex-medium/hex-high | weather: weather-hex-low/weather-hex-medium/weather-hex-high)",
+        help=(
+            "Use quality preset (ico: low/medium/high/ultra | hex: hex-low/hex-medium/hex-high"
+            " | weather: weather-hex-low/weather-hex-medium/weather-hex-high)"
+        ),
     )
 
     args = parser.parse_args()

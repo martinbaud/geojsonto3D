@@ -7,13 +7,11 @@ import json
 import sys
 from pathlib import Path
 from unittest.mock import patch, mock_open, MagicMock
-import tempfile
-import os
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from blender_runner import load_cache, save_cache, verify_blender, build_script_args, PRESETS
+from blender_runner import load_cache, save_cache, verify_blender, build_script_args, PRESETS  # noqa: E402
 
 
 class TestCacheOperations(unittest.TestCase):
