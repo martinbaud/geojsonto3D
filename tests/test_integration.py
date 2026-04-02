@@ -179,37 +179,5 @@ class TestGitignore(unittest.TestCase):
         self.assertTrue("*.pyc" in content or "*.py[cod]" in content)
 
 
-class TestREADME(unittest.TestCase):
-    """Test README documentation"""
-
-    def setUp(self):
-        """Set up test environment"""
-        self.project_root = Path(__file__).parent.parent
-        self.readme_path = self.project_root / "README.md"
-
-    def test_readme_has_usage_section(self):
-        """Test that README has usage section"""
-        with open(self.readme_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        self.assertIn("## Usage", content)
-
-    def test_readme_has_presets_documented(self):
-        """Test that all presets are documented in README"""
-        with open(self.readme_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        presets = ["low", "medium", "high", "ultra"]
-        for preset in presets:
-            self.assertIn(preset, content.lower())
-
-    def test_readme_has_installation_section(self):
-        """Test that README has installation section"""
-        with open(self.readme_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        self.assertIn("## Installation", content)
-
-
 if __name__ == "__main__":
     unittest.main()

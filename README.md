@@ -6,6 +6,8 @@
 
 Convert GeoJSON geographic data into interactive 3D globe models using Blender.
 
+![Globe in Blender](docs/globe-blender.png)
+
 ## Table of Contents
 
 - [Usage](#usage)
@@ -303,23 +305,25 @@ pytest tests/test_integration.py -v
 ### Test Coverage
 
 The test suite covers:
-- ✅ Cache operations (load/save)
-- ✅ Blender path verification
-- ✅ Configuration presets
-- ✅ Script argument building
-- ✅ Project structure validation
-- ✅ README documentation checks
-- ✅ Integration workflows
-
-**35 tests** covering critical functionality with **100% pass rate**.
+- Cache operations (load/save)
+- Blender path verification
+- Configuration presets and script argument building
+- Geometric functions (xyz_to_latlon, point_in_poly)
+- Integration workflows
 
 ### Continuous Integration
 
 GitHub Actions automatically runs tests on:
 - Multiple OS: Ubuntu, Windows, macOS
-- Multiple Python versions: 3.8, 3.9, 3.10, 3.11
+- Python 3.10, 3.11, 3.12, 3.13
 - Every push to `main` branch
 - Every pull request
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## Credits
 
