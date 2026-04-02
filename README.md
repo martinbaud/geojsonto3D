@@ -1,11 +1,12 @@
 # GeoJSON to 3D Globe
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)
-![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
+![Tests](https://github.com/martinbaud/geojsonto3D/actions/workflows/tests.yml/badge.svg)
+![License](https://img.shields.io/github/license/martinbaud/geojsonto3D)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 
 Convert GeoJSON geographic data into interactive 3D globe models using Blender.
+
+![Globe in Blender](docs/globe-blender.png)
 
 ## Table of Contents
 
@@ -116,12 +117,12 @@ When choosing "custom" during interactive setup, you can configure:
 ```
 geojsonto3D/
 ├── main.py                             # Main launcher (run this)
-├── blender_script.py                   # Blender script (legacy, updated version in src/)
 ├── README.md                           # This file
 │
 ├── src/                                # Source code
 │   ├── blender_runner.py              # CLI with interactive configuration
-│   └── run.py                         # Blender script (globe generation)
+│   ├── run.py                         # Blender script (ICO globe generation)
+│   └── hex_run.py                     # Blender script (hex globe generation)
 │
 ├── data/                               # Input GeoJSON data
 │   ├── ne_50m_admin_0_countries.geojson
@@ -248,14 +249,14 @@ Note: Closings are generated per city. If cities are disabled, the closing flag 
 
 ### Blender not found
 ```bash
-python run.py --configure
+python main.py --configure
 ```
 Then enter the correct path to `blender.exe`
 
 ### Script failed
 Run in GUI mode to see detailed errors:
 ```bash
-python run.py --gui
+python main.py --gui
 ```
 
 ### Check cache
@@ -268,13 +269,13 @@ cat .config_cache.json
 ### Reset everything
 ```bash
 rm .blender_cache.json .config_cache.json
-python run.py --configure
+python main.py --configure
 ```
 
 ### Out of memory
 Use a lower quality preset:
 ```bash
-python run.py --preset low
+python main.py --preset low
 ```
 
 ## How It Works
@@ -294,36 +295,35 @@ The project includes comprehensive unit and integration tests.
 
 ```bash
 # Run all tests
-python run_tests.py
+pytest tests/ -v
 
 # Run specific test file
-python -m unittest tests.test_blender_runner
-python -m unittest tests.test_integration
-
-# Run with pytest (if installed)
-pytest tests/ -v
+pytest tests/test_blender_runner.py -v
+pytest tests/test_integration.py -v
 ```
 
 ### Test Coverage
 
 The test suite covers:
-- ✅ Cache operations (load/save)
-- ✅ Blender path verification
-- ✅ Configuration presets
-- ✅ Script argument building
-- ✅ Project structure validation
-- ✅ README documentation checks
-- ✅ Integration workflows
-
-**35 tests** covering critical functionality with **100% pass rate**.
+- Cache operations (load/save)
+- Blender path verification
+- Configuration presets and script argument building
+- Geometric functions (xyz_to_latlon, point_in_poly)
+- Integration workflows
 
 ### Continuous Integration
 
 GitHub Actions automatically runs tests on:
 - Multiple OS: Ubuntu, Windows, macOS
-- Multiple Python versions: 3.8, 3.9, 3.10, 3.11
-- Every push to `master` branch
+- Python 3.10, 3.11, 3.12, 3.13
+- Every push to `main` branch
 - Every pull request
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## Credits
 

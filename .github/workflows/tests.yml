@@ -1,10 +1,10 @@
-name: Run Tests
+name: Tests
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [main]
   pull_request:
-    branches: [ master, main ]
+    branches: [main]
 
 jobs:
   test:
@@ -12,39 +12,27 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-
-    - name: Display Python version
-      run: python -c "import sys; print(sys.version)"
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
 
-    - name: Run unit tests
+    - name: Run tests with coverage
       run: |
-        python -m pytest tests/test_blender_runner.py -v --tb=short
-
-    - name: Run integration tests
-      run: |
-        python -m pytest tests/test_integration.py -v --tb=short
-
-    - name: Run all tests with coverage
-      run: |
-        python -m pytest tests/ --cov=src --cov-report=xml --cov-report=term-missing
+        python -m pytest tests/ -v --tb=short --cov=src --cov-report=xml --cov-report=term-missing
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         file: ./coverage.xml
         flags: unittests
@@ -55,28 +43,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
 
     - name: Install linting tools
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 black pylint
-
-    - name: Run flake8
-      run: |
-        flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        pip install flake8 black
 
     - name: Check code formatting with black
-      run: |
-        black --check src/ tests/ || true
+      run: black --check --line-length 120 src/ tests/
 
-    - name: Run pylint
-      run: |
-        pylint src/ --exit-zero --max-line-length=127 || true
+    - name: Run flake8
+      run: flake8 src/ tests/ --max-line-length=120 --extend-ignore=E203,W503

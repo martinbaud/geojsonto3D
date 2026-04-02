@@ -3,10 +3,13 @@ import json
 import math
 import bmesh
 import sys
-import os
 from mathutils import Vector
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+
+# Ensure src/ is importable when run via Blender --python
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from geo_utils import xyz_to_latlon as _xyz_to_latlon, point_in_poly  # noqa: E402
 
 # --- CONFIGURATION (can be overridden by CLI arguments) ----------------------
 # Project root directory (parent of src/)
@@ -43,7 +46,7 @@ CITY_MAX = 200  # limit number of generated cities to keep geometry reasonable
 CITY_MARKER_RADIUS = 0.007  # approximate tangent radius of city marker base
 CITY_MARKER_SIDES = 3  # triangular prism per requirement
 CITY_CLOSING_RADIUS_SCALE = 1.1  # closing slightly larger than city marker
-CITY_CLOSING_GAP = 0.0005       # small gap above city top to avoid z-fight
+CITY_CLOSING_GAP = 0.0005  # small gap above city top to avoid z-fight
 
 # Feature toggles (harmonized)
 # ENABLE_BORDER: generate border ribbons for countries
@@ -111,19 +114,7 @@ OUT_CFG = str(RES_DIR / f"atlas_ico_subdiv_{ICO_SUBDIV}.config.json")
 # --- UTILITY FUNCTIONS -------------------------------------------------------
 def xyz_to_latlon(v):
     """Convert 3D Cartesian coordinates to latitude/longitude in degrees."""
-    r = v.length
-    return math.degrees(math.asin(v.z/r)), math.degrees(math.atan2(v.y, v.x))
-
-
-def point_in_poly(lon, lat, poly):
-    """Ray-casting algorithm to test if a point is inside a polygon."""
-    inside = False
-    for i in range(len(poly)):
-        x1, y1 = poly[i]
-        x2, y2 = poly[(i+1) % len(poly)]
-        if ((y1 > lat) != (y2 > lat)) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
-            inside = not inside
-    return inside
+    return _xyz_to_latlon(v.x, v.y, v.z)
 
 
 def select_hierarchy(obj):
@@ -178,9 +169,9 @@ def extrude_mesh_radially_bi(obj, depth_above, depth_below):
     bm.free()
 
 
-def create_border_ribbons_from_planar_source_on_top(source_obj, above, name_prefix, parent,
-                                                    width=BORDER_WIDTH, height=BORDER_HEIGHT,
-                                                    zfight_eps=BORDER_ZFIGHT_EPS):
+def create_border_ribbons_from_planar_source_on_top(
+    source_obj, above, name_prefix, parent, width=BORDER_WIDTH, height=BORDER_HEIGHT, zfight_eps=BORDER_ZFIGHT_EPS
+):
     """
     Generate 3D border ribbons on top surface only.
 
@@ -248,7 +239,7 @@ def create_border_ribbons_from_planar_source_on_top(source_obj, above, name_pref
     src_name = source_obj.name
     for pfx in ("country_", "city_"):
         if src_name.startswith(pfx):
-            src_name = src_name[len(pfx):]
+            src_name = src_name[len(pfx) :]
             break
 
     target_name = f"{name_prefix}_{src_name}"
@@ -266,8 +257,7 @@ def create_border_ribbons_from_planar_source_on_top(source_obj, above, name_pref
     return ob
 
 
-def create_closing_rings_from_planar_source_on_top(source_obj, above, name_prefix, parent,
-                                                   width=BORDER_WIDTH):
+def create_closing_rings_from_planar_source_on_top(source_obj, above, name_prefix, parent, width=BORDER_WIDTH):
     """
     Generate flat ring quads along the country's top-edge contours (no height extrusion).
     This matches the country "bordure" at the top face for optimized naming.
@@ -315,7 +305,7 @@ def create_closing_rings_from_planar_source_on_top(source_obj, above, name_prefi
     src_name = source_obj.name
     for pfx in ("country_", "city_"):
         if src_name.startswith(pfx):
-            src_name = src_name[len(pfx):]
+            src_name = src_name[len(pfx) :]
             break
     target_name = f"{name_prefix}_{src_name}"
 
@@ -331,9 +321,10 @@ def create_closing_rings_from_planar_source_on_top(source_obj, above, name_prefi
     bpy.ops.object.shade_smooth()
     return ob
 
-def create_city_marker(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
-                       radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES,
-                       parent=None):
+
+def create_city_marker(
+    name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY, radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES, parent=None
+):
     """
     Create a small low-poly city marker oriented to the globe surface using a hex prism.
     Naming: f"city_{name}_{index}" should be provided by caller with unique name.
@@ -380,9 +371,10 @@ def create_city_marker(name, lat_deg, lon_deg, above=EXTRUDE_ABOVE_CITY,
     obj = new_mesh_object(name, verts_all, faces, parent=parent, smooth=True)
     return obj
 
-def create_city_marker_at_direction(name, dir_normal: Vector, above=EXTRUDE_ABOVE_CITY,
-                                    radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES,
-                                    parent=None):
+
+def create_city_marker_at_direction(
+    name, dir_normal: Vector, above=EXTRUDE_ABOVE_CITY, radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES, parent=None
+):
     """
     Create a city marker oriented by a given surface normal direction.
     Returns (obj, verts_top) where verts_top are the 3 top vertices positions.
@@ -421,8 +413,8 @@ def create_city_marker_at_direction(name, dir_normal: Vector, above=EXTRUDE_ABOV
     obj = new_mesh_object(name, verts_all, faces, parent=parent, smooth=True)
     return obj, verts_top
 
-def create_city_marker_from_face(name, face_index: int, shrink=SHRINK, above=EXTRUDE_ABOVE_CITY,
-                                 parent=None):
+
+def create_city_marker_from_face(name, face_index: int, shrink=SHRINK, above=EXTRUDE_ABOVE_CITY, parent=None):
     """
     Create a triangular city marker aligned to the given icosphere face.
     Uses face vertex directions and shrinks them toward the centroid for robust in-face placement.
@@ -461,8 +453,8 @@ def create_city_marker_from_face(name, face_index: int, shrink=SHRINK, above=EXT
     obj = new_mesh_object(name, verts_all, faces, parent=parent, smooth=True)
     return obj, verts_top
 
-def create_city_closing_ribbon_from_top(name_prefix, verts_top, height=BORDER_HEIGHT, width=BORDER_WIDTH,
-                                        parent=None):
+
+def create_city_closing_ribbon_from_top(name_prefix, verts_top, height=BORDER_HEIGHT, width=BORDER_WIDTH, parent=None):
     """
     Create a thin ribbon along the edges of a triangular city top face, placed above that face.
     """
@@ -474,17 +466,17 @@ def create_city_closing_ribbon_from_top(name_prefix, verts_top, height=BORDER_HE
     n = n.normalized()
 
     bm_out = bmesh.new()
-    edges = [(0,1), (1,2), (2,0)]
-    for (i0, i1) in edges:
+    edges = [(0, 1), (1, 2), (2, 0)]
+    for i0, i1 in edges:
         v0 = verts_top[i0] + n * CITY_CLOSING_GAP
         v1 = verts_top[i1] + n * CITY_CLOSING_GAP
         edge_dir = (v1 - v0).normalized()
         perp = n.cross(edge_dir).normalized()
 
-        a0 = v0 + perp * (width/2)
-        b0 = v0 - perp * (width/2)
-        a1 = v1 + perp * (width/2)
-        b1 = v1 - perp * (width/2)
+        a0 = v0 + perp * (width / 2)
+        b0 = v0 - perp * (width / 2)
+        a1 = v1 + perp * (width / 2)
+        b1 = v1 - perp * (width / 2)
 
         ta0 = a0 + a0.normalized() * height
         tb0 = b0 + b0.normalized() * height
@@ -494,13 +486,7 @@ def create_city_closing_ribbon_from_top(name_prefix, verts_top, height=BORDER_HE
         vs = [a0, a1, b1, b0, ta0, ta1, tb1, tb0]
         verts_new = [bm_out.verts.new(co) for co in vs]
 
-        faces_idx = [
-            (0,1,5,4),
-            (1,2,6,5),
-            (2,3,7,6),
-            (3,0,4,7),
-            (4,5,6,7)
-        ]
+        faces_idx = [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7), (4, 5, 6, 7)]
         for idx in faces_idx:
             try:
                 bm_out.faces.new([verts_new[i] for i in idx])
@@ -519,12 +505,17 @@ def create_city_closing_ribbon_from_top(name_prefix, verts_top, height=BORDER_HE
     bpy.ops.object.shade_smooth()
     return ob
 
-def create_city_closing_cap(name, lat_deg, lon_deg,
-                            city_above=EXTRUDE_ABOVE_CITY,
-                            height=BORDER_HEIGHT,
-                            radius=CITY_MARKER_RADIUS * CITY_CLOSING_RADIUS_SCALE,
-                            sides=3,
-                            parent=None):
+
+def create_city_closing_cap(
+    name,
+    lat_deg,
+    lon_deg,
+    city_above=EXTRUDE_ABOVE_CITY,
+    height=BORDER_HEIGHT,
+    radius=CITY_MARKER_RADIUS * CITY_CLOSING_RADIUS_SCALE,
+    sides=3,
+    parent=None,
+):
     """
     Create a thin triangular cap (closing) above a city marker.
     - Base positioned just above the city's top (city_above + CITY_CLOSING_GAP)
@@ -569,7 +560,7 @@ def create_city_closing_cap(name, lat_deg, lon_deg,
 
 
 # --- LOAD GEOJSON DATA -------------------------------------------------------
-with open(GEOJSON_COUNTRIES, encoding='utf-8') as f:
+with open(GEOJSON_COUNTRIES, encoding="utf-8") as f:
     gj = json.load(f)
 
 features = []
@@ -588,12 +579,11 @@ for feat in gj.get("features", [])[:MAX_COUNTRIES]:
         if not rings:
             continue
         outer = rings[0]
-        bbox = (min(x for x, y in outer), max(x for x, y in outer),
-                min(y for x, y in outer), max(y for x, y in outer))
+        bbox = (min(x for x, y in outer), max(x for x, y in outer), min(y for x, y in outer), max(y for x, y in outer))
         features.append({"name": f"{name}_{idx}", "rings": rings, "bbox": bbox})
 
 # --- SCENE SETUP -------------------------------------------------------------
-bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.select_all(action="SELECT")
 bpy.ops.object.delete(use_global=False)
 parent = bpy.data.objects.new(PARENT_NAME, None)
 bpy.context.collection.objects.link(parent)
@@ -664,8 +654,13 @@ for name, fids in faces_by_country.items():
     # 2) Generate borders on top surface (by projecting original surface to +above)
     if ENABLE_BORDER:
         create_border_ribbons_from_planar_source_on_top(
-            surf, EXTRUDE_ABOVE_COUNTRY, "border", parent,
-            width=BORDER_WIDTH, height=BORDER_HEIGHT, zfight_eps=BORDER_ZFIGHT_EPS
+            surf,
+            EXTRUDE_ABOVE_COUNTRY,
+            "border",
+            parent,
+            width=BORDER_WIDTH,
+            height=BORDER_HEIGHT,
+            zfight_eps=BORDER_ZFIGHT_EPS,
         )
 
     # 2b) Closing handled per-city; no country-based closing
@@ -679,33 +674,39 @@ for name, fids in faces_by_country.items():
 city_objs = []
 if ENABLE_CITIES:
     try:
-        with open(GEOJSON_PLACES, encoding='utf-8') as pf:
+        with open(GEOJSON_PLACES, encoding="utf-8") as pf:
             pj = json.load(pf)
 
         # Extract candidate places
         places = []
-        feats = pj.get('features') or pj  # support raw array files
+        feats = pj.get("features") or pj  # support raw array files
         for idx, feat in enumerate(feats):
-            props = feat.get('properties', {}) if isinstance(feat, dict) else {}
-            geom = feat.get('geometry', {}) if isinstance(feat, dict) else None
-            if geom and geom.get('type') == 'Point':
-                lon, lat = geom.get('coordinates', [None, None])
+            props = feat.get("properties", {}) if isinstance(feat, dict) else {}
+            geom = feat.get("geometry", {}) if isinstance(feat, dict) else None
+            if geom and geom.get("type") == "Point":
+                lon, lat = geom.get("coordinates", [None, None])
             else:
                 # Try common flat schema
-                lon = props.get('longitude') or props.get('LON') or props.get('LONDD') or props.get('LONGITUDE')
-                lat = props.get('latitude') or props.get('LAT') or props.get('LATDD') or props.get('LATITUDE')
+                lon = props.get("longitude") or props.get("LON") or props.get("LONDD") or props.get("LONGITUDE")
+                lat = props.get("latitude") or props.get("LAT") or props.get("LATDD") or props.get("LATITUDE")
             if lon is None or lat is None:
                 continue
-            name = props.get('NAME') or props.get('NAMEASCII') or props.get('name') or props.get('nameascii') or f"Place_{idx}"
-            pop = props.get('POP_MAX') or props.get('pop_max') or props.get('POP') or 0
+            name = (
+                props.get("NAME")
+                or props.get("NAMEASCII")
+                or props.get("name")
+                or props.get("nameascii")
+                or f"Place_{idx}"
+            )
+            pop = props.get("POP_MAX") or props.get("pop_max") or props.get("POP") or 0
             try:
                 pop = float(pop)
             except Exception:
                 pop = 0
-            places.append({'name': name, 'lat': float(lat), 'lon': float(lon), 'pop': pop})
+            places.append({"name": name, "lat": float(lat), "lon": float(lon), "pop": pop})
 
         # Keep top-N by population if available
-        places.sort(key=lambda p: p.get('pop', 0), reverse=True)
+        places.sort(key=lambda p: p.get("pop", 0), reverse=True)
         places = places[:CITY_MAX]
 
         # Helper to find containing feature and best face index by alignment
@@ -746,12 +747,12 @@ if ENABLE_CITIES:
             return best_face
 
         for i, p in enumerate(places):
-            face_index = find_city_face(p['lat'], p['lon'])
+            face_index = find_city_face(p["lat"], p["lon"])
             city_name = f"city_{p['name']}_{i}"
             if face_index is None:
                 # Fallback to directional placement using computed normal
-                lat_r = math.radians(p['lat'])
-                lon_r = math.radians(p['lon'])
+                lat_r = math.radians(p["lat"])
+                lon_r = math.radians(p["lon"])
                 n_dir = Vector((math.cos(lat_r) * math.cos(lon_r), math.cos(lat_r) * math.sin(lon_r), math.sin(lat_r)))
                 obj, verts_top = create_city_marker_at_direction(city_name, n_dir, parent=parent)
             else:
@@ -770,25 +771,20 @@ if ENABLE_CITIES:
         print(f"Warning: failed to generate cities: {e}")
 
 # --- EXPORT ------------------------------------------------------------------
-bpy.ops.object.select_all(action='DESELECT')
+bpy.ops.object.select_all(action="DESELECT")
 select_hierarchy(parent)
 bpy.context.view_layer.objects.active = parent
 
 print(f"Exporting to: {OUT_GLB}")
 
-bpy.ops.export_scene.gltf(
-    filepath=OUT_GLB,
-    export_format='GLB',
-    use_selection=True,
-    export_apply=True
-)
+bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format="GLB", use_selection=True, export_apply=True)
 
 print(f"Export complete: {OUT_GLB}")
 
 # --- WRITE CONFIG ------------------------------------------------------------
 try:
     cfg = {
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "ico_subdiv": ICO_SUBDIV,
         "radius": RADIUS,
         "extrusions": {

@@ -21,15 +21,15 @@ import math
 import bmesh
 import sys
 from mathutils import Vector
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
+# Ensure src/ is importable when run via Blender --python
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from geo_utils import xyz_to_latlon as _xyz_to_latlon, point_in_poly  # noqa: E402
+
 # --- CONFIGURATION (overridable via CLI) ------------------------------------
-PROJECT_ROOT = (
-    Path(bpy.path.abspath("//")).parent
-    if "//" in bpy.path.abspath("//")
-    else Path(__file__).parent.parent
-)
+PROJECT_ROOT = Path(bpy.path.abspath("//")).parent if "//" in bpy.path.abspath("//") else Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RES_DIR = PROJECT_ROOT / "res"
 RES_DIR.mkdir(exist_ok=True)
@@ -39,9 +39,9 @@ GEOJSON_PLACES = str(DATA_DIR / "ne_50m_populated_places.json")
 COUNTRY_NAME_MAPPING = str(DATA_DIR / "country_name_mapping.json")
 
 RADIUS = 1.0
-ICO_SUBDIV = 4          # Blender icosphere subdivision (dual -> hex cells)
-HEX_LABEL = None         # Output filename label (default: ICO_SUBDIV + 1)
-MODE = "atlas"            # "atlas" or "weather"
+ICO_SUBDIV = 4  # Blender icosphere subdivision (dual -> hex cells)
+HEX_LABEL = None  # Output filename label (default: ICO_SUBDIV + 1)
+MODE = "atlas"  # "atlas" or "weather"
 
 EXTRUDE_ABOVE = 0.02
 EXTRUDE_BELOW = 0.0
@@ -54,9 +54,9 @@ ENABLE_EXTRUSION = True
 ENABLE_CITIES = False
 
 # City configuration
-CITY_MAX = 200              # Max cities to generate
+CITY_MAX = 200  # Max cities to generate
 CITY_MARKER_RADIUS = 0.006  # Radius of city marker base
-CITY_MARKER_SIDES = 6       # Hexagonal prism (matches hex globe)
+CITY_MARKER_SIDES = 6  # Hexagonal prism (matches hex globe)
 CITY_BORDER_WIDTH = 0.0004  # Width of city border ring
 CITY_BORDER_HEIGHT = 0.001  # Height of city border ring
 # City extrusion: outer face at surface, extends INWARD like countries
@@ -68,44 +68,59 @@ CITY_BORDER_HEIGHT = 0.001  # Height of city border ring
 # across narrow water bodies like the Mediterranean (~200km wide vs ~477km cells).
 MIN_PASS2_VOTES = 2
 
-BATCH_LOG = 50            # Progress log interval
+BATCH_LOG = 50  # Progress log interval
 
 # --- CLI PARSING ------------------------------------------------------------
 if "--" in sys.argv:
-    _args = sys.argv[sys.argv.index("--") + 1:]
+    _args = sys.argv[sys.argv.index("--") + 1 :]
     _i = 0
     while _i < len(_args):
         _a = _args[_i]
         if _a == "--ico-subdiv" and _i + 1 < len(_args):
-            ICO_SUBDIV = int(_args[_i + 1]); _i += 2
+            ICO_SUBDIV = int(_args[_i + 1])
+            _i += 2
         elif _a == "--hex-label" and _i + 1 < len(_args):
-            HEX_LABEL = int(_args[_i + 1]); _i += 2
+            HEX_LABEL = int(_args[_i + 1])
+            _i += 2
         elif _a == "--mode" and _i + 1 < len(_args):
-            MODE = _args[_i + 1]; _i += 2
+            MODE = _args[_i + 1]
+            _i += 2
         elif _a == "--extrude-above" and _i + 1 < len(_args):
-            EXTRUDE_ABOVE = float(_args[_i + 1]); _i += 2
+            EXTRUDE_ABOVE = float(_args[_i + 1])
+            _i += 2
         elif _a == "--extrude-below" and _i + 1 < len(_args):
-            EXTRUDE_BELOW = float(_args[_i + 1]); _i += 2
+            EXTRUDE_BELOW = float(_args[_i + 1])
+            _i += 2
         elif _a == "--border-width" and _i + 1 < len(_args):
-            BORDER_WIDTH = float(_args[_i + 1]); _i += 2
+            BORDER_WIDTH = float(_args[_i + 1])
+            _i += 2
         elif _a == "--border-height" and _i + 1 < len(_args):
-            BORDER_HEIGHT = float(_args[_i + 1]); _i += 2
+            BORDER_HEIGHT = float(_args[_i + 1])
+            _i += 2
         elif _a in ("--enable-border", "--enable-borders"):
-            ENABLE_BORDER = True; _i += 1
+            ENABLE_BORDER = True
+            _i += 1
         elif _a in ("--disable-border", "--disable-borders"):
-            ENABLE_BORDER = False; _i += 1
+            ENABLE_BORDER = False
+            _i += 1
         elif _a == "--enable-extrusion":
-            ENABLE_EXTRUSION = True; _i += 1
+            ENABLE_EXTRUSION = True
+            _i += 1
         elif _a == "--disable-extrusion":
-            ENABLE_EXTRUSION = False; _i += 1
+            ENABLE_EXTRUSION = False
+            _i += 1
         elif _a == "--min-pass2-votes" and _i + 1 < len(_args):
-            MIN_PASS2_VOTES = int(_args[_i + 1]); _i += 2
+            MIN_PASS2_VOTES = int(_args[_i + 1])
+            _i += 2
         elif _a in ("--enable-cities",):
-            ENABLE_CITIES = True; _i += 1
+            ENABLE_CITIES = True
+            _i += 1
         elif _a in ("--disable-cities",):
-            ENABLE_CITIES = False; _i += 1
+            ENABLE_CITIES = False
+            _i += 1
         elif _a == "--city-max" and _i + 1 < len(_args):
-            CITY_MAX = int(_args[_i + 1]); _i += 2
+            CITY_MAX = int(_args[_i + 1])
+            _i += 2
         else:
             _i += 1
 
@@ -130,25 +145,7 @@ OUT_CFG = OUT_GLB.replace(".glb", ".config.json")
 # --- UTILITY FUNCTIONS ------------------------------------------------------
 def xyz_to_latlon(v):
     """Convert 3D Cartesian to (latitude, longitude) in degrees."""
-    r = v.length
-    if r < 1e-10:
-        return 0.0, 0.0
-    return (
-        math.degrees(math.asin(max(-1.0, min(1.0, v.z / r)))),
-        math.degrees(math.atan2(v.y, v.x)),
-    )
-
-
-def point_in_poly(lon, lat, poly):
-    """Ray-casting point-in-polygon test."""
-    inside = False
-    n = len(poly)
-    for i in range(n):
-        x1, y1 = poly[i]
-        x2, y2 = poly[(i + 1) % n]
-        if ((y1 > lat) != (y2 > lat)) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
-            inside = not inside
-    return inside
+    return _xyz_to_latlon(v.x, v.y, v.z)
 
 
 def select_hierarchy(obj):
@@ -177,7 +174,7 @@ def new_mesh_object(name, verts, faces, parent=None, smooth=True):
 def load_country_name_mapping(path):
     """Load country name mapping (Natural Earth -> API names)."""
     try:
-        with open(path, encoding='utf-8') as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("mapping", {})
     except (FileNotFoundError, json.JSONDecodeError) as e:
@@ -243,11 +240,13 @@ def compute_goldberg_cells(ico_subdiv, radius):
                 break
 
         if len(face_centroids) >= 3:
-            cells.append({
-                'verts': face_centroids,
-                'centroid': vert.co.normalized() * radius,
-                'sides': len(face_centroids),
-            })
+            cells.append(
+                {
+                    "verts": face_centroids,
+                    "centroid": vert.co.normalized() * radius,
+                    "sides": len(face_centroids),
+                }
+            )
 
     bm.free()
     return cells
@@ -256,7 +255,7 @@ def compute_goldberg_cells(ico_subdiv, radius):
 # --- COUNTRY ASSIGNMENT -----------------------------------------------------
 def load_geojson_features(path):
     """Load and parse GeoJSON country polygons."""
-    with open(path, encoding='utf-8') as f:
+    with open(path, encoding="utf-8") as f:
         gj = json.load(f)
 
     features = []
@@ -267,11 +266,7 @@ def load_geojson_features(path):
         geom = feat.get("geometry", {})
         if not geom:
             continue
-        polys = (
-            geom["coordinates"]
-            if geom["type"] == "MultiPolygon"
-            else [geom["coordinates"]]
-        )
+        polys = geom["coordinates"] if geom["type"] == "MultiPolygon" else [geom["coordinates"]]
         for idx, poly in enumerate(polys):
             rings = []
             for ring in poly:
@@ -282,8 +277,10 @@ def load_geojson_features(path):
                 continue
             outer = rings[0]
             bbox = (
-                min(x for x, y in outer), max(x for x, y in outer),
-                min(y for x, y in outer), max(y for x, y in outer),
+                min(x for x, y in outer),
+                max(x for x, y in outer),
+                min(y for x, y in outer),
+                max(y for x, y in outer),
             )
             features.append({"name": f"{name}_{idx}", "admin": name, "rings": rings, "bbox": bbox})
 
@@ -312,9 +309,9 @@ def assign_cells_to_countries(cells, features):
         if idx % BATCH_LOG == 0:
             print(f"  Assigning cells: {idx}/{total} ({idx * 100 / total:.0f}%)")
 
-        lat, lon = xyz_to_latlon(cell['centroid'])
-        cell['lat'] = lat
-        cell['lon'] = lon
+        lat, lon = xyz_to_latlon(cell["centroid"])
+        cell["lat"] = lat
+        cell["lon"] = lon
 
         # --- Pass 1: centroid ---
         for feat in features:
@@ -323,7 +320,7 @@ def assign_cells_to_countries(cells, features):
                 continue
             if point_in_poly(lon, lat, feat["rings"][0]):
                 assignments[idx] = feat["name"]
-                cell['admin'] = feat["admin"]
+                cell["admin"] = feat["admin"]
                 break
 
         if assignments[idx] is not None:
@@ -331,7 +328,7 @@ def assign_cells_to_countries(cells, features):
 
         # --- Pass 2: vertex vote (requires >= 2 vertex hits for same country) ---
         votes = {}
-        for v in cell['verts']:
+        for v in cell["verts"]:
             vlat, vlon = xyz_to_latlon(v)
             for feat in features:
                 minx, maxx, miny, maxy = feat["bbox"]
@@ -348,7 +345,7 @@ def assign_cells_to_countries(cells, features):
                 for feat in features:
                     if feat["name"] == best_name:
                         assignments[idx] = feat["name"]
-                        cell['admin'] = feat["admin"]
+                        cell["admin"] = feat["admin"]
                         pass2_rescued += 1
                         break
 
@@ -402,8 +399,12 @@ def create_cell_mesh(name, cell_verts_list, parent=None, merge_verts=True):
 
 
 # --- RADIAL EXTRUSION -------------------------------------------------------
-def extrude_mesh_radially_bi(obj, depth_above, depth_below):
-    """Bidirectional radial extrusion aligned to the base sphere."""
+def extrude_mesh_radially_bi(obj, depth_above, depth_below, remove_closing=True):
+    """Bidirectional radial extrusion aligned to the base sphere.
+
+    When remove_closing=True, the inner (bottom) cap faces are deleted after
+    extrusion — they are hidden by the GlobeFill and waste GPU fill rate.
+    """
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bm.faces.ensure_lookup_table()
@@ -419,19 +420,35 @@ def extrude_mesh_radially_bi(obj, depth_above, depth_below):
             v.co = v.co.normalized() * (RADIUS + depth_above)
 
     if depth_below > 0:
+        bm.faces.ensure_lookup_table()
         res_down = bmesh.ops.extrude_face_region(bm, geom=bm.faces)
         verts_down = [v for v in res_down["geom"] if isinstance(v, bmesh.types.BMVert)]
+        # Track inner cap faces BEFORE moving vertices
+        faces_down = [f for f in res_down["geom"] if isinstance(f, bmesh.types.BMFace)]
         for v in verts_down:
             v.co = v.co.normalized() * (RADIUS - depth_below)
 
+        # Remove inner cap faces (closing faces hidden by GlobeFill)
+        if remove_closing and faces_down:
+            inner_r = RADIUS - depth_below
+            closing = []
+            for f in faces_down:
+                if all(abs(v.co.length - inner_r) < 0.02 for v in f.verts):
+                    closing.append(f)
+            if closing:
+                bmesh.ops.delete(bm, geom=closing, context="FACES")
+
+    # Recalculate normals — required for Three.js FrontSide rendering
+    # Must happen AFTER closing face removal to avoid thin-shell confusion
+    bm.faces.ensure_lookup_table()
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
     bm.to_mesh(obj.data)
     bm.free()
 
 
 # --- BORDER RIBBONS ----------------------------------------------------------
-def create_border_ribbons(source_obj, above, name_prefix, parent,
-                          width=BORDER_WIDTH, height=BORDER_HEIGHT):
+def create_border_ribbons(source_obj, above, name_prefix, parent, width=BORDER_WIDTH, height=BORDER_HEIGHT):
     """
     Generate 3D border ribbons on boundary edges of a mesh.
 
@@ -497,7 +514,7 @@ def create_border_ribbons(source_obj, above, name_prefix, parent,
     src_name = source_obj.name
     for pfx in ("country_", "cell_", "_temp_group_"):
         if src_name.startswith(pfx):
-            src_name = src_name[len(pfx):]
+            src_name = src_name[len(pfx) :]
             break
     target_name = f"{name_prefix}_{src_name}"
 
@@ -517,48 +534,50 @@ def create_border_ribbons(source_obj, above, name_prefix, parent,
 # --- CITY GENERATION ---------------------------------------------------------
 def load_places_data(path):
     """Load city/places data from Natural Earth JSON."""
-    with open(path, encoding='utf-8') as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
     places = []
     # Handle both GeoJSON FeatureCollection and raw array
-    items = data.get('features', data) if isinstance(data, dict) else data
+    items = data.get("features", data) if isinstance(data, dict) else data
 
     for item in items:
-        props = item.get('properties', item)
-        geom = item.get('geometry', {})
+        props = item.get("properties", item)
+        geom = item.get("geometry", {})
 
         # Extract coordinates (GeoJSON or flat schema)
-        if geom and geom.get('type') == 'Point':
-            lon, lat = geom['coordinates']
+        if geom and geom.get("type") == "Point":
+            lon, lat = geom["coordinates"]
         else:
-            lat = props.get('LATITUDE') or props.get('LAT') or props.get('LATDD')
-            lon = props.get('LONGITUDE') or props.get('LON') or props.get('LONDD')
+            lat = props.get("LATITUDE") or props.get("LAT") or props.get("LATDD")
+            lon = props.get("LONGITUDE") or props.get("LON") or props.get("LONDD")
 
         if lat is None or lon is None:
             continue
 
-        name = props.get('NAME') or props.get('NAMEASCII') or 'Unknown'
-        pop = props.get('POP_MAX') or props.get('pop_max') or 0
+        name = props.get("NAME") or props.get("NAMEASCII") or "Unknown"
+        pop = props.get("POP_MAX") or props.get("pop_max") or 0
 
         # Clean name for mesh naming
-        name_clean = ''.join(c if c.isalnum() else '_' for c in name)
+        name_clean = "".join(c if c.isalnum() else "_" for c in name)
 
-        places.append({
-            "name": name_clean,
-            "lon": lon,
-            "lat": lat,
-            "pop": pop,
-        })
+        places.append(
+            {
+                "name": name_clean,
+                "lon": lon,
+                "lat": lat,
+                "pop": pop,
+            }
+        )
 
     # Sort by population descending
-    places.sort(key=lambda p: p['pop'], reverse=True)
+    places.sort(key=lambda p: p["pop"], reverse=True)
     return places
 
 
-def create_city_marker(name, lat_deg, lon_deg, below=None,
-                       radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES,
-                       parent=None):
+def create_city_marker(
+    name, lat_deg, lon_deg, below=None, radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES, parent=None
+):
     """
     Create a hexagonal prism city marker oriented to the globe surface.
     Outer face at surface level, extruding INWARD like countries.
@@ -571,11 +590,13 @@ def create_city_marker(name, lat_deg, lon_deg, below=None,
     lon_rad = math.radians(lon_deg)
 
     # Surface normal direction
-    n = Vector((
-        math.cos(lat_rad) * math.cos(lon_rad),
-        math.cos(lat_rad) * math.sin(lon_rad),
-        math.sin(lat_rad),
-    )).normalized()
+    n = Vector(
+        (
+            math.cos(lat_rad) * math.cos(lon_rad),
+            math.cos(lat_rad) * math.sin(lon_rad),
+            math.sin(lat_rad),
+        )
+    ).normalized()
 
     # Create tangent vectors
     up = Vector((0, 0, 1))
@@ -627,10 +648,16 @@ def create_city_marker(name, lat_deg, lon_deg, below=None,
     return obj
 
 
-def create_city_border(name, lat_deg, lon_deg,
-                       radius=CITY_MARKER_RADIUS, sides=CITY_MARKER_SIDES,
-                       width=CITY_BORDER_WIDTH, height=CITY_BORDER_HEIGHT,
-                       parent=None):
+def create_city_border(
+    name,
+    lat_deg,
+    lon_deg,
+    radius=CITY_MARKER_RADIUS,
+    sides=CITY_MARKER_SIDES,
+    width=CITY_BORDER_WIDTH,
+    height=CITY_BORDER_HEIGHT,
+    parent=None,
+):
     """
     Create a hexagonal border ring around a city marker.
     Border sits at surface level (same as city outer face).
@@ -639,11 +666,13 @@ def create_city_border(name, lat_deg, lon_deg,
     lon_rad = math.radians(lon_deg)
 
     # Surface normal direction
-    n = Vector((
-        math.cos(lat_rad) * math.cos(lon_rad),
-        math.cos(lat_rad) * math.sin(lon_rad),
-        math.sin(lat_rad),
-    )).normalized()
+    n = Vector(
+        (
+            math.cos(lat_rad) * math.cos(lon_rad),
+            math.cos(lat_rad) * math.sin(lon_rad),
+            math.sin(lat_rad),
+        )
+    ).normalized()
 
     # Create tangent vectors
     up = Vector((0, 0, 1))
@@ -725,11 +754,13 @@ def find_cell_for_city(lat, lon, cells, cell_countries, features):
             break
 
     # City direction vector on sphere
-    city_dir = Vector((
-        math.cos(math.radians(lat)) * math.cos(math.radians(lon)),
-        math.cos(math.radians(lat)) * math.sin(math.radians(lon)),
-        math.sin(math.radians(lat)),
-    )).normalized()
+    city_dir = Vector(
+        (
+            math.cos(math.radians(lat)) * math.cos(math.radians(lon)),
+            math.cos(math.radians(lat)) * math.sin(math.radians(lon)),
+            math.sin(math.radians(lat)),
+        )
+    ).normalized()
 
     best_cell_idx = None
     best_dot = -1
@@ -741,7 +772,7 @@ def find_cell_for_city(lat, lon, cells, cell_countries, features):
     for idx, (cell, country) in enumerate(zip(cells, cell_countries)):
         if country is None:
             continue
-        cell_dir = cell['centroid'].normalized()
+        cell_dir = cell["centroid"].normalized()
         dot = city_dir.dot(cell_dir)
 
         # Track global best
@@ -750,7 +781,7 @@ def find_cell_for_city(lat, lon, cells, cell_countries, features):
             global_best_idx = idx
 
         # Check country match
-        cell_admin = cell.get('admin')
+        cell_admin = cell.get("admin")
         if city_country and cell_admin == city_country:
             if dot > best_dot:
                 best_dot = dot
@@ -789,8 +820,8 @@ print(f"  {len(features)} country polygons loaded")
 # --- Compute Goldberg dual cells --------------------------------------------
 print("\nComputing Goldberg polyhedron dual mesh...")
 cells = compute_goldberg_cells(ICO_SUBDIV, RADIUS)
-n_pent = sum(1 for c in cells if c['sides'] == 5)
-n_hex = sum(1 for c in cells if c['sides'] == 6)
+n_pent = sum(1 for c in cells if c["sides"] == 5)
+n_hex = sum(1 for c in cells if c["sides"] == 6)
 print(f"  {len(cells)} cells ({n_pent} pentagons, {n_hex} hexagons)")
 
 # --- Assign cells to countries ----------------------------------------------
@@ -800,14 +831,14 @@ n_assigned = sum(1 for c in cell_countries if c is not None)
 print(f"  {n_assigned}/{len(cells)} cells assigned to countries")
 
 # --- Scene setup ------------------------------------------------------------
-bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.select_all(action="SELECT")
 bpy.ops.object.delete(use_global=False)
 parent = bpy.data.objects.new(PARENT_NAME, None)
 bpy.context.collection.objects.link(parent)
 
 # Group cells
-country_cells = {}    # {feature_name: [(global_idx, cell), ...]}
-ocean_cells = []       # [(global_idx, cell), ...]
+country_cells = {}  # {feature_name: [(global_idx, cell), ...]}
+ocean_cells = []  # [(global_idx, cell), ...]
 
 # City objects (populated in atlas mode if enabled)
 city_objs = []
@@ -822,7 +853,7 @@ for idx, (cell, country) in enumerate(zip(cells, cell_countries)):
 # --- Create GlobeFill (ocean) -----------------------------------------------
 print(f"\nCreating {GLOBE_FILL_NAME} ({len(ocean_cells)} ocean cells)...")
 if ocean_cells:
-    ocean_verts = [cell['verts'] for _, cell in ocean_cells]
+    ocean_verts = [cell["verts"] for _, cell in ocean_cells]
     create_cell_mesh(GLOBE_FILL_NAME, ocean_verts, parent=parent, merge_verts=True)
 
 
@@ -838,13 +869,17 @@ if MODE == "atlas":
         if ci % BATCH_LOG == 0:
             print(f"  Countries: {ci}/{total_countries} ({ci * 100 / total_countries:.0f}%)")
 
-        cell_verts = [cell['verts'] for _, cell in cell_list]
+        cell_verts = [cell["verts"] for _, cell in cell_list]
         surf = create_cell_mesh(f"country_{cname}", cell_verts, parent=parent, merge_verts=True)
 
         if ENABLE_BORDER:
             create_border_ribbons(
-                surf, EXTRUDE_ABOVE, "border", parent,
-                width=BORDER_WIDTH, height=BORDER_HEIGHT,
+                surf,
+                EXTRUDE_ABOVE,
+                "border",
+                parent,
+                width=BORDER_WIDTH,
+                height=BORDER_HEIGHT,
             )
 
         if ENABLE_EXTRUSION:
@@ -863,12 +898,12 @@ if MODE == "atlas":
             print(f"  Loaded {len(places)} cities (top by population)")
 
             for i, p in enumerate(places):
-                cell_idx, city_country = find_cell_for_city(p['lat'], p['lon'], cells, cell_countries, features)
+                cell_idx, city_country = find_cell_for_city(p["lat"], p["lon"], cells, cell_countries, features)
                 if cell_idx is None:
                     continue
 
                 # Use cell centroid for positioning (centers city in hex cell)
-                cell_centroid = cells[cell_idx]['centroid']
+                cell_centroid = cells[cell_idx]["centroid"]
                 cell_lat, cell_lon = xyz_to_latlon(cell_centroid)
 
                 # Use country name in mesh name for proper indexing
@@ -900,7 +935,7 @@ elif MODE == "weather":
     for cname, cell_list in country_cells.items():
         for local_idx, (global_idx, cell) in enumerate(cell_list):
             cell_name = f"cell_{cname}_{local_idx}"
-            cell_obj = create_cell_mesh(cell_name, [cell['verts']], parent=parent, merge_verts=False)
+            cell_obj = create_cell_mesh(cell_name, [cell["verts"]], parent=parent, merge_verts=False)
             # Apply extrusion to each cell
             if ENABLE_EXTRUSION:
                 extrude_mesh_radially_bi(cell_obj, EXTRUDE_ABOVE, EXTRUDE_BELOW)
@@ -913,13 +948,20 @@ elif MODE == "weather":
     if ENABLE_BORDER:
         print("  Generating country borders...")
         for cname, cell_list in country_cells.items():
-            cell_verts = [cell['verts'] for _, cell in cell_list]
+            cell_verts = [cell["verts"] for _, cell in cell_list]
             group_mesh = create_cell_mesh(
-                f"_temp_group_{cname}", cell_verts, parent=parent, merge_verts=True,
+                f"_temp_group_{cname}",
+                cell_verts,
+                parent=parent,
+                merge_verts=True,
             )
             create_border_ribbons(
-                group_mesh, 0.0, "border", parent,
-                width=BORDER_WIDTH, height=BORDER_HEIGHT,
+                group_mesh,
+                0.0,
+                "border",
+                parent,
+                width=BORDER_WIDTH,
+                height=BORDER_HEIGHT,
             )
             bpy.data.objects.remove(group_mesh, do_unlink=True)
 
@@ -927,7 +969,7 @@ elif MODE == "weather":
 
     # Generate mapping JSON
     mapping = {
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "total_cells": len(cells),
         "assigned_cells": n_assigned,
         "ocean_cells": len(ocean_cells),
@@ -935,29 +977,31 @@ elif MODE == "weather":
     }
 
     for idx, (cell, country) in enumerate(zip(cells, cell_countries)):
-        raw_country = cell.get('admin') if country else None
-        mapping["cells"].append({
-            "idx": idx,
-            "lat": round(cell.get('lat', 0), 4),
-            "lon": round(cell.get('lon', 0), 4),
-            "country": raw_country,
-            "sides": cell['sides'],
-        })
+        raw_country = cell.get("admin") if country else None
+        mapping["cells"].append(
+            {
+                "idx": idx,
+                "lat": round(cell.get("lat", 0), 4),
+                "lon": round(cell.get("lon", 0), 4),
+                "country": raw_country,
+                "sides": cell["sides"],
+            }
+        )
 
-    with open(OUT_MAPPING, 'w', encoding='utf-8') as f:
+    with open(OUT_MAPPING, "w", encoding="utf-8") as f:
         json.dump(mapping, f)
     print(f"  Wrote mapping: {OUT_MAPPING}")
 
 
 # --- Export GLB --------------------------------------------------------------
 print(f"\nExporting to: {OUT_GLB}")
-bpy.ops.object.select_all(action='DESELECT')
+bpy.ops.object.select_all(action="DESELECT")
 select_hierarchy(parent)
 bpy.context.view_layer.objects.active = parent
 
 bpy.ops.export_scene.gltf(
     filepath=OUT_GLB,
-    export_format='GLB',
+    export_format="GLB",
     use_selection=True,
     export_apply=True,
 )
@@ -966,7 +1010,7 @@ print(f"Export complete: {OUT_GLB}")
 # --- Write config JSON -------------------------------------------------------
 try:
     cfg = {
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "mode": MODE,
         "ico_subdiv": ICO_SUBDIV,
         "hex_label": HEX_LABEL,
