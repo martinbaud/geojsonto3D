@@ -109,6 +109,18 @@ PRESETS = {
         "enable_borders": True,
         "min_pass2_votes": 1,  # Lower threshold to capture narrow countries like Panama
     },
+    "hex-medium-lite": {
+        "script": "hex",
+        "mode": "atlas",
+        "ico_subdiv": 5,
+        "hex_label": 55,
+        "extrude_above": 0.0,
+        "extrude_below": 0.3,
+        "border_width": 0.0005,
+        "border_height": 0.001,
+        "enable_borders": True,
+        "min_pass2_votes": 1,
+    },
     "hex-high": {
         "script": "hex",
         "mode": "atlas",
@@ -120,6 +132,19 @@ PRESETS = {
         "border_height": 0.0015,
         "enable_borders": True,
         "enable_cities": True,
+        "min_pass2_votes": 1,
+    },
+    "hex-high-lite": {
+        "script": "hex",
+        "mode": "atlas",
+        "ico_subdiv": 6,
+        "hex_label": 66,
+        "extrude_above": 0.0,
+        "extrude_below": 0.3,
+        "border_width": 0.0005,
+        "border_height": 0.001,
+        "enable_borders": True,
+        "enable_cities": False,
         "min_pass2_votes": 1,
     },
     "weather-hex-low": {

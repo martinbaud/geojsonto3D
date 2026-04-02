@@ -399,8 +399,12 @@ def create_cell_mesh(name, cell_verts_list, parent=None, merge_verts=True):
 
 
 # --- RADIAL EXTRUSION -------------------------------------------------------
-def extrude_mesh_radially_bi(obj, depth_above, depth_below):
-    """Bidirectional radial extrusion aligned to the base sphere."""
+def extrude_mesh_radially_bi(obj, depth_above, depth_below, remove_closing=True):
+    """Bidirectional radial extrusion aligned to the base sphere.
+
+    When remove_closing=True, the inner (bottom) cap faces are deleted after
+    extrusion — they are hidden by the GlobeFill and waste GPU fill rate.
+    """
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bm.faces.ensure_lookup_table()
@@ -416,12 +420,29 @@ def extrude_mesh_radially_bi(obj, depth_above, depth_below):
             v.co = v.co.normalized() * (RADIUS + depth_above)
 
     if depth_below > 0:
+        bm.faces.ensure_lookup_table()
         res_down = bmesh.ops.extrude_face_region(bm, geom=bm.faces)
         verts_down = [v for v in res_down["geom"] if isinstance(v, bmesh.types.BMVert)]
+        # Track inner cap faces BEFORE moving vertices
+        faces_down = [f for f in res_down["geom"] if isinstance(f, bmesh.types.BMFace)]
         for v in verts_down:
             v.co = v.co.normalized() * (RADIUS - depth_below)
 
+        # Remove inner cap faces (closing faces hidden by GlobeFill)
+        if remove_closing and faces_down:
+            inner_r = RADIUS - depth_below
+            closing = []
+            for f in faces_down:
+                if all(abs(v.co.length - inner_r) < 0.02 for v in f.verts):
+                    closing.append(f)
+            if closing:
+                bmesh.ops.delete(bm, geom=closing, context='FACES')
+
+    # Recalculate normals — required for Three.js FrontSide rendering
+    # Must happen AFTER closing face removal to avoid thin-shell confusion
+    bm.faces.ensure_lookup_table()
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
     bm.to_mesh(obj.data)
     bm.free()
 
