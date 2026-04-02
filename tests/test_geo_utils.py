@@ -110,8 +110,8 @@ class TestPointInPoly(unittest.TestCase):
     def test_concave_polygon(self):
         """L-shaped polygon."""
         l_shape = [(0, 0), (10, 0), (10, 5), (5, 5), (5, 10), (0, 10)]
-        self.assertTrue(point_in_poly(2, 2, l_shape))   # inside bottom
-        self.assertTrue(point_in_poly(2, 8, l_shape))   # inside top-left
+        self.assertTrue(point_in_poly(2, 2, l_shape))  # inside bottom
+        self.assertTrue(point_in_poly(2, 8, l_shape))  # inside top-left
         self.assertFalse(point_in_poly(8, 8, l_shape))  # outside top-right notch
 
     def test_empty_polygon(self):
@@ -120,8 +120,8 @@ class TestPointInPoly(unittest.TestCase):
     def test_france_rough(self):
         """France is roughly inside a bounding polygon."""
         france_rough = [(-5, 42), (9, 42), (9, 51), (-5, 51)]
-        self.assertTrue(point_in_poly(2.35, 48.86, france_rough))   # Paris
-        self.assertFalse(point_in_poly(-10, 40, france_rough))      # Atlantic
+        self.assertTrue(point_in_poly(2.35, 48.86, france_rough))  # Paris
+        self.assertFalse(point_in_poly(-10, 40, france_rough))  # Atlantic
 
 
 if __name__ == "__main__":

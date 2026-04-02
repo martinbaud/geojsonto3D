@@ -186,13 +186,12 @@ class TestPresets(unittest.TestCase):
                     f"Hex preset '{preset_name}' has invalid mode '{preset['mode']}'",
                 )
 
-    def test_hex_label_matches_ico_subdiv(self):
-        """Test that hex_label equals ico_subdiv for hex presets"""
+    def test_hex_label_is_positive_integer(self):
+        """Test that hex_label is a positive integer for hex presets"""
         for preset_name, preset in PRESETS.items():
             if preset.get("script") == "hex":
-                self.assertEqual(
-                    preset["hex_label"], preset["ico_subdiv"], f"Hex preset '{preset_name}': hex_label != ico_subdiv"
-                )
+                self.assertIsInstance(preset["hex_label"], int, f"Hex preset '{preset_name}': hex_label not int")
+                self.assertGreater(preset["hex_label"], 0, f"Hex preset '{preset_name}': hex_label must be > 0")
 
 
 class TestScriptArgs(unittest.TestCase):

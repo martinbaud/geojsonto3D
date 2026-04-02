@@ -436,7 +436,7 @@ def extrude_mesh_radially_bi(obj, depth_above, depth_below, remove_closing=True)
                 if all(abs(v.co.length - inner_r) < 0.02 for v in f.verts):
                     closing.append(f)
             if closing:
-                bmesh.ops.delete(bm, geom=closing, context='FACES')
+                bmesh.ops.delete(bm, geom=closing, context="FACES")
 
     # Recalculate normals — required for Three.js FrontSide rendering
     # Must happen AFTER closing face removal to avoid thin-shell confusion
