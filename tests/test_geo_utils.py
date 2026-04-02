@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from geo_utils import xyz_to_latlon, point_in_poly
+from geo_utils import xyz_to_latlon, point_in_poly  # noqa: E402
 
 
 class TestXyzToLatlon(unittest.TestCase):
